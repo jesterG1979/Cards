@@ -27,16 +27,22 @@ export function CollectionScreen() {
 
   useEffect(() => {
     if (!ready || !idList) return;
-    const saved = readCollection();
     let cancel = false;
+    const ids = idList.split(",");
 
     async function refresh() {
       try {
-        const response = await fetch(`/api/cards?ids=${encodeURIComponent(idList)}`);
-        const payload = (await response.json()) as { cards?: PricedCard[]; error?: string };
-        if (!response.ok) throw new Error(payload.error || "refresh failed");
+        const cards: PricedCard[] = [];
+        for (let index = 0; index < ids.length; index += 20) {
+          const chunk = ids.slice(index, index + 20).join(",");
+          const response = await fetch(`/api/cards?ids=${encodeURIComponent(chunk)}`);
+          const payload = (await response.json()) as { cards?: PricedCard[]; error?: string };
+          if (!response.ok) throw new Error(payload.error || "refresh failed");
+          if (cancel) return;
+          cards.push(...(payload.cards ?? []));
+        }
         if (cancel) return;
-        writeCollection(applyFreshPrices(saved, payload.cards ?? []));
+        writeCollection(applyFreshPrices(readCollection(), cards));
       } catch {
         if (!cancel) setNote("Couldn't refresh prices. Showing the prices you last saved.");
       }

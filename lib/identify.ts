@@ -4,11 +4,11 @@ import { getRates } from "@/lib/fx";
 import { bottomBand, preprocessCard } from "@/lib/preprocess";
 import { runTesseract } from "@/lib/ocr";
 import { parseOcr } from "@/lib/ocr-parse";
-import { dedupeCards, fetchCardsByNumber, fetchImage, narrowByDenom, searchCards } from "@/lib/pokemon";
+import { dedupeCards, fetchCardsByNumber, fetchImage, searchCards, selectByDenom } from "@/lib/pokemon";
 import { toPricedCard } from "@/lib/prices";
 import { releaseTime, scoreCandidate } from "@/lib/score";
 import { buildSearchQuery } from "@/lib/search-query";
-import type { ApiCard, IdentifyResult, PricedCard } from "@/lib/types";
+import type { ApiCard, IdentifyResult, OcrRead, PricedCard } from "@/lib/types";
 
 const hashCache = new Map<string, string>();
 
@@ -36,34 +36,58 @@ async function hashUrl(url: string): Promise<string | null> {
   }
 }
 
-async function searchQuietly(query: string, pageSize: number): Promise<ApiCard[]> {
+async function searchAttempt(
+  query: string,
+  pageSize: number,
+): Promise<{ cards: ApiCard[]; failed: CardPriceError | null }> {
   try {
-    return await searchCards(query, pageSize);
+    return { cards: await searchCards(query, pageSize), failed: null };
   } catch (error) {
     if (!(error instanceof CardPriceError)) throw error;
-    return [];
+    return { cards: [], failed: error };
   }
 }
 
-async function lookupPool(ocr: ReturnType<typeof parseOcr>): Promise<ApiCard[]> {
+export async function lookupPool(ocr: OcrRead): Promise<ApiCard[]> {
   const names = ocr.names.slice(0, 3).map((name) => name.replace(/"/g, ""));
+  let succeeded = false;
+  let failure: CardPriceError | null = null;
+  let numberOnly: ApiCard[] = [];
+
+  const note = (result: { cards: ApiCard[]; failed: CardPriceError | null }) => {
+    if (result.failed) failure = result.failed;
+    else succeeded = true;
+    return result.cards;
+  };
+
   for (const number of ocr.numbers) {
     const named: ApiCard[] = [];
     for (const name of names) {
-      named.push(...(await searchQuietly(`name:"${name}" number:"${number.num}"`, 30)));
+      named.push(...note(await searchAttempt(`name:"${name}" number:"${number.num}"`, 30)));
     }
-    if (named.length > 0) return dedupeCards(narrowByDenom(named, number.denom));
+    const namedMatch = selectByDenom(named, number.denom);
+    if (namedMatch) return namedMatch;
+
     try {
       const found = await fetchCardsByNumber(number.num);
-      if (found.length > 0) return dedupeCards(narrowByDenom(found, number.denom));
+      succeeded = true;
+      const matched = selectByDenom(found, number.denom);
+      if (matched) return matched;
+      if (found.length > 0 && numberOnly.length === 0) numberOnly = dedupeCards(found);
     } catch (error) {
       if (!(error instanceof CardPriceError)) throw error;
+      failure = error;
     }
   }
+
+  if (numberOnly.length > 0) return numberOnly;
+
   for (const name of names) {
-    const found = await searchQuietly(buildSearchQuery(name), 16);
+    const found = note(await searchAttempt(buildSearchQuery(name), 16));
     if (found.length > 0) return found;
   }
+
+  if (!succeeded && failure) throw failure;
   return [];
 }
 
@@ -71,8 +95,7 @@ export async function identifyCard(image: Buffer): Promise<IdentifyResult> {
   const prepared = await preprocessCard(image);
   const ocrText = await readCardText(prepared);
   const ocr = parseOcr(ocrText);
-  const rates = await getRates();
-  const pool = await lookupPool(ocr);
+  const [rates, pool] = await Promise.all([getRates(), lookupPool(ocr)]);
 
   const photoHash = await dhash(prepared);
   const priced: { card: PricedCard; hashDistance: number | null; score: number }[] = pool.map((card) => {

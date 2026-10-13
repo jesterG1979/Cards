@@ -125,4 +125,25 @@ describe("AUD prices", () => {
     );
     expect(collectionQuote(missingMarket, "normal")?.source).toBe("Cardmarket");
   });
+
+  it("does not price a first-edition printing with the Cardmarket average", () => {
+    const quotes = quotesForCard(
+      card({
+        tcgplayer: {
+          updatedAt: "2026/10/13",
+          prices: {
+            "1stEditionHolofoil": { market: null },
+            unlimitedHolofoil: { market: 3 },
+          },
+        },
+        cardmarket: { updatedAt: "2026/06/30", prices: { averageSellPrice: 1.5 } },
+      }),
+      rates,
+    );
+    const europe = quotes.find((quote) => quote.source === "Cardmarket" && quote.kind === "average sell");
+    expect(europe?.variantKey).toBe("cardmarket");
+    expect(europe?.amountAud).toBe(toAud(1.5, 1.6032));
+    expect(collectionQuote(quotes, "1stEditionHolofoil")).toBeNull();
+    expect(collectionQuote(quotes, "unlimitedHolofoil")?.source).toBe("TCGplayer");
+  });
 });

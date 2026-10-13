@@ -4,8 +4,21 @@ import { identifyCard } from "@/lib/identify";
 export const maxDuration = 60;
 
 const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_BODY_BYTES = MAX_BYTES + 64 * 1024;
+const MAX_CONCURRENT = 2;
+
+let activeScans = 0;
 
 export async function POST(request: Request) {
+  const declared = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    return Response.json({ error: "That photo is too big. Try another one." }, { status: 400 });
+  }
+  if (activeScans >= MAX_CONCURRENT) {
+    return Response.json({ error: "The scanner is busy. Try again in a moment." }, { status: 429 });
+  }
+
+  activeScans += 1;
   try {
     const form = await request.formData();
     const file = form.get("image");
@@ -27,6 +40,8 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     return errorResponse(error);
+  } finally {
+    activeScans -= 1;
   }
 }
 

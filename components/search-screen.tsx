@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CardImage } from "@/components/card-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,14 @@ import { CardMatch } from "@/components/card-match";
 import { TopBar } from "@/components/top-bar";
 import { collectorLabel } from "@/lib/format";
 import type { PricedCard } from "@/lib/types";
+
+function searchErrorMessage(error: unknown): string {
+  const text = error instanceof Error ? error.message : "";
+  if (text === "Failed to fetch") {
+    return "Couldn't reach the card list. Check your connection and try again.";
+  }
+  return text || "The card list didn't load. Try again in a moment.";
+}
 
 export function SearchScreen({ initialQuery }: { initialQuery: string }) {
   const [query, setQuery] = useState(initialQuery);
@@ -17,8 +25,21 @@ export function SearchScreen({ initialQuery }: { initialQuery: string }) {
     initialQuery.trim() ? "loading" : "idle",
   );
   const [message, setMessage] = useState<string | null>(null);
+  const requestGen = useRef(0);
+
+  async function applySearch(trimmed: string, generation: number) {
+    const response = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
+    const payload = (await response.json()) as { cards?: PricedCard[]; error?: string };
+    if (generation !== requestGen.current) return;
+    if (!response.ok) throw new Error(payload.error || "The card list didn't load.");
+    const found = payload.cards ?? [];
+    setCards(found);
+    setStatus("done");
+    if (found.length === 0) setMessage("Nothing came up for that. Check the spelling.");
+  }
 
   async function runSearch(value: string) {
+    const generation = ++requestGen.current;
     const trimmed = value.trim();
     if (!trimmed) {
       setStatus("error");
@@ -30,57 +51,33 @@ export function SearchScreen({ initialQuery }: { initialQuery: string }) {
     setMessage(null);
     setSelected(null);
     try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
-      const payload = (await response.json()) as { cards?: PricedCard[]; error?: string };
-      if (!response.ok) throw new Error(payload.error || "The card list didn't load.");
-      setCards(payload.cards ?? []);
-      setStatus("done");
-      if ((payload.cards ?? []).length === 0) {
-        setMessage("Nothing came up for that. Check the spelling.");
-      }
+      await applySearch(trimmed, generation);
     } catch (error) {
+      if (generation !== requestGen.current) return;
       setStatus("error");
       setCards([]);
-      const text = error instanceof Error ? error.message : "";
-      setMessage(
-        text === "Failed to fetch"
-          ? "Couldn't reach the card list. Check your connection and try again."
-          : text || "The card list didn't load. Try again in a moment.",
-      );
+      setMessage(searchErrorMessage(error));
     }
   }
 
   useEffect(() => {
     const trimmed = initialQuery.trim();
     if (!trimmed) return;
-    let cancel = false;
+    const generation = ++requestGen.current;
 
-    async function load() {
+    void (async () => {
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
-        const payload = (await response.json()) as { cards?: PricedCard[]; error?: string };
-        if (cancel) return;
-        if (!response.ok) throw new Error(payload.error || "The card list didn't load.");
-        const found = payload.cards ?? [];
-        setCards(found);
-        setStatus("done");
-        if (found.length === 0) setMessage("Nothing came up for that. Check the spelling.");
+        await applySearch(trimmed, generation);
       } catch (error) {
-        if (cancel) return;
+        if (generation !== requestGen.current) return;
         setStatus("error");
         setCards([]);
-        const text = error instanceof Error ? error.message : "";
-        setMessage(
-          text === "Failed to fetch"
-            ? "Couldn't reach the card list. Check your connection and try again."
-            : text || "The card list didn't load. Try again in a moment.",
-        );
+        setMessage(searchErrorMessage(error));
       }
-    }
+    })();
 
-    void load();
     return () => {
-      cancel = true;
+      requestGen.current += 1;
     };
   }, [initialQuery]);
 

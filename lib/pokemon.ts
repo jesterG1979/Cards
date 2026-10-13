@@ -5,6 +5,8 @@ import type { ApiCard } from "@/lib/types";
 const BASE = "https://api.pokemontcg.io/v2";
 const USER_AGENT = "CardPrice/1.0 (pokemon card pricer)";
 const SELECT = "id,name,number,rarity,supertype,subtypes,set,images,tcgplayer,cardmarket";
+const API_TIMEOUT_MS = 8000;
+const ID_BATCH = 20;
 
 function headers(): HeadersInit {
   const result: Record<string, string> = {
@@ -28,18 +30,29 @@ export function asCard(value: unknown): ApiCard | null {
 
 async function apiGet(url: URL): Promise<{ data: ApiCard[]; totalCount: number }> {
   let lastStatus = 0;
+  let lastDetail = "";
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
-    const response = await fetch(url, { headers: headers(), cache: "no-store" });
-    if (response.ok) {
-      const body = (await response.json()) as { data?: unknown[]; totalCount?: number };
-      const data = (body.data ?? []).map(asCard).filter((card): card is ApiCard => card !== null);
-      return { data, totalCount: body.totalCount ?? data.length };
+    try {
+      const response = await fetch(url, {
+        headers: headers(),
+        cache: "no-store",
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+      if (response.ok) {
+        const body = (await response.json()) as { data?: unknown[]; totalCount?: number };
+        const data = (body.data ?? []).map(asCard).filter((card): card is ApiCard => card !== null);
+        return { data, totalCount: body.totalCount ?? data.length };
+      }
+      lastStatus = response.status;
+      lastDetail = "";
+      if (response.status < 500 && response.status !== 429) break;
+    } catch (error) {
+      lastStatus = 0;
+      lastDetail = error instanceof Error ? error.message : "request failed";
     }
-    lastStatus = response.status;
-    if (response.status < 500 && response.status !== 429) break;
   }
-  console.error(`Pokemon TCG API failed with status ${lastStatus}`);
+  console.error(`Pokemon TCG API failed${lastStatus ? ` with status ${lastStatus}` : ""} ${lastDetail}`.trim());
   throw new CardPriceError("The card list didn't load. Try again in a moment.", 502);
 }
 
@@ -70,22 +83,36 @@ export async function fetchCardsByNumber(num: string): Promise<ApiCard[]> {
   return all;
 }
 
-export async function fetchCardsByIds(ids: string[]): Promise<ApiCard[]> {
-  if (ids.length === 0) return [];
+async function fetchIdBatch(ids: string[]): Promise<ApiCard[]> {
   const query = ids.map((id) => `id:"${id.replace(/"/g, "")}"`).join(" OR ");
   const url = new URL(`${BASE}/cards`);
   url.searchParams.set("q", query);
-  url.searchParams.set("pageSize", String(Math.min(250, ids.length)));
+  url.searchParams.set("pageSize", String(ids.length));
   url.searchParams.set("select", SELECT);
   const { data } = await apiGet(url);
   return data;
 }
 
-export function narrowByDenom(cards: ApiCard[], denom: string): ApiCard[] {
+export async function fetchCardsByIds(ids: string[]): Promise<ApiCard[]> {
+  if (ids.length === 0) return [];
+  const all: ApiCard[] = [];
+  for (let index = 0; index < ids.length; index += ID_BATCH) {
+    all.push(...(await fetchIdBatch(ids.slice(index, index + ID_BATCH))));
+  }
+  return dedupeCards(all);
+}
+
+export function selectByDenom(cards: ApiCard[], denom: string): ApiCard[] | null {
+  if (cards.length === 0) return null;
+  const unique = dedupeCards(cards);
   const value = denomValue(denom);
-  if (value == null) return cards;
-  const hits = cards.filter((card) => card.set.printedTotal === value || card.set.total === value);
-  return hits.length > 0 ? hits : cards;
+  if (value == null) return unique;
+  const hits = unique.filter((card) => card.set.printedTotal === value || card.set.total === value);
+  return hits.length > 0 ? hits : null;
+}
+
+export function narrowByDenom(cards: ApiCard[], denom: string): ApiCard[] {
+  return selectByDenom(cards, denom) ?? cards;
 }
 
 export async function fetchImage(url: string): Promise<Buffer> {

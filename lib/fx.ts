@@ -2,6 +2,7 @@ import type { FxRates } from "@/lib/types";
 
 const USER_AGENT = "CardPrice/1.0 (pokemon card pricer)";
 const TTL_MS = 60 * 60 * 1000;
+const FX_TIMEOUT_MS = 4000;
 
 type Cache = { at: number; rates: FxRates };
 let cache: Cache | null = null;
@@ -18,6 +19,7 @@ async function fetchRate(base: "USD" | "EUR"): Promise<{ rate: number; date: str
       {
         headers: { Accept: "application/json", "User-Agent": USER_AGENT },
         cache: "no-store",
+        signal: AbortSignal.timeout(FX_TIMEOUT_MS),
       },
     );
     if (!response.ok) return null;
