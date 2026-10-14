@@ -9,7 +9,7 @@ const VARIANT_LABELS: Record<string, string> = {
   "1stEdition": "1st edition",
   unlimitedHolofoil: "Unlimited holo",
   unlimited: "Unlimited",
-  cardmarket: "Cardmarket",
+  cardmarket: "Any printing (Cardmarket)",
 };
 
 export function variantLabel(key: string): string {
@@ -52,11 +52,13 @@ function quote(options: {
   };
 }
 
-const CARDMARKET_SINGLE_PRINTINGS = new Set(["normal", "holofoil", "unlimited"]);
+const CARDMARKET_SINGLE_PRINTINGS = new Set(["normal", "holofoil", "unlimited", "unlimitedHolofoil"]);
 
 function cardmarketAverageKey(keys: string[]): string {
   if (keys.length === 0 || keys.includes("normal")) return "normal";
   const printings = keys.filter((key) => key !== "reverseHolofoil");
+  // Only a reverse holo is listed, so Cardmarket's average is for that printing too.
+  if (printings.length === 0) return "reverseHolofoil";
   const only = printings.length === 1 ? printings[0] : null;
   if (only && CARDMARKET_SINGLE_PRINTINGS.has(only)) return only;
   return "cardmarket";
@@ -115,7 +117,7 @@ export function quotesForCard(card: ApiCard, rates: FxRates): PriceQuote[] {
     }),
   );
 
-  if (positive(prices?.reverseHoloSell) != null) {
+  if (mainKey !== "reverseHolofoil" && positive(prices?.reverseHoloSell) != null) {
     quotes.push(
       quote({
         source: "Cardmarket",

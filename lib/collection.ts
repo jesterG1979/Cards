@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
-import { collectionQuote } from "@/lib/prices";
+import { collectionQuote, preferredVariant, variantLabel } from "@/lib/prices";
 import type { CollectionItem, PricedCard } from "@/lib/types";
 
 const KEY = "cardprice.collection.v1";
@@ -12,6 +12,10 @@ export type ValueSummary = {
   pricedCopies: number;
 };
 
+function optionalString(value: unknown): boolean {
+  return value == null || (typeof value === "string" && value.length <= 2048);
+}
+
 function isItem(value: unknown): value is CollectionItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<CollectionItem>;
@@ -19,8 +23,19 @@ function isItem(value: unknown): value is CollectionItem {
     typeof item.cardId === "string" &&
     typeof item.name === "string" &&
     typeof item.variantKey === "string" &&
-    typeof item.quantity === "number" &&
-    item.quantity > 0
+    item.cardId.length > 0 &&
+    item.cardId.length <= 64 &&
+    item.variantKey.length <= 64 &&
+    Number.isInteger(item.quantity) &&
+    (item.quantity as number) > 0 &&
+    (item.quantity as number) <= MAX_QTY &&
+    (item.amountAud == null ||
+      (typeof item.amountAud === "number" && Number.isFinite(item.amountAud) && item.amountAud >= 0)) &&
+    optionalString(item.setName) &&
+    optionalString(item.number) &&
+    optionalString(item.rarity) &&
+    optionalString(item.variantLabel) &&
+    optionalString(item.image)
   );
 }
 
@@ -76,15 +91,25 @@ export function applyFreshPrices(items: CollectionItem[], cards: PricedCard[]): 
   return items.map((item) => {
     const card = byId.get(item.cardId);
     if (!card) return item;
-    const quote = collectionQuote(card.quotes, item.variantKey);
+    let variantKey = item.variantKey;
+    // The printing this item was saved under is gone upstream (for example it was saved as
+    // "normal" while TCGplayer had no data, and TCGplayer now lists it as "holofoil").
+    // Move it to the card's current preferred printing unless that would clash with another item.
+    if (!card.quotes.some((quote) => quote.variantKey === variantKey)) {
+      const next = preferredVariant(card.quotes);
+      const clash = items.some((other) => other.cardId === item.cardId && other.variantKey === next);
+      if (!clash) variantKey = next;
+    }
+    const quote = collectionQuote(card.quotes, variantKey);
     return {
       ...item,
+      variantKey,
       name: card.name,
       setName: card.setName,
       number: card.number,
       rarity: card.rarity,
       image: card.imageSmall,
-      variantLabel: quote?.variantLabel ?? item.variantLabel,
+      variantLabel: quote?.variantLabel ?? (variantKey === item.variantKey ? item.variantLabel : variantLabel(variantKey)),
       amountAud: quote?.amountAud ?? null,
       priceSource: quote?.source ?? null,
       priceDate: quote?.sourceDate ?? null,

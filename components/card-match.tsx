@@ -184,7 +184,7 @@ export function CardMatch({
             >
               <p className="text-lg font-extrabold">{item.variantLabel}</p>
               {item.quotes.map((quote) => (
-                <PriceLine key={`${quote.source}-${quote.kind}`} quote={quote} />
+                <PriceLine key={`${quote.source}-${quote.variantKey}-${quote.kind}`} quote={quote} />
               ))}
             </button>
           );

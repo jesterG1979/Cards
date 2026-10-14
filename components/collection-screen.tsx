@@ -31,20 +31,29 @@ export function CollectionScreen() {
     const ids = idList.split(",");
 
     async function refresh() {
-      try {
-        const cards: PricedCard[] = [];
-        for (let index = 0; index < ids.length; index += 20) {
-          const chunk = ids.slice(index, index + 20).join(",");
+      const cards: PricedCard[] = [];
+      let failed = false;
+      // One bad chunk (an id upstream can't look up, a timeout) must not stop the rest refreshing.
+      for (let index = 0; index < ids.length; index += 20) {
+        const chunk = ids.slice(index, index + 20).join(",");
+        try {
           const response = await fetch(`/api/cards?ids=${encodeURIComponent(chunk)}`);
           const payload = (await response.json()) as { cards?: PricedCard[]; error?: string };
           if (!response.ok) throw new Error(payload.error || "refresh failed");
-          if (cancel) return;
           cards.push(...(payload.cards ?? []));
+        } catch {
+          failed = true;
         }
         if (cancel) return;
-        writeCollection(applyFreshPrices(readCollection(), cards));
-      } catch {
-        if (!cancel) setNote("Couldn't refresh prices. Showing the prices you last saved.");
+      }
+      // Re-read storage so quantity changes made while we were fetching are kept.
+      if (cards.length > 0) writeCollection(applyFreshPrices(readCollection(), cards));
+      if (failed) {
+        setNote(
+          cards.length > 0
+            ? "Some prices couldn't refresh. Those show the price you last saved."
+            : "Couldn't refresh prices. Showing the prices you last saved.",
+        );
       }
     }
 

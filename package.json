@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 38471",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:live": "LIVE_TESTS=1 vitest run tests/identify.integration.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

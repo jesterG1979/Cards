@@ -47,7 +47,44 @@ describe("lookupPool", () => {
     const found = await lookupPool(ocr);
 
     expect(fetchCardsByNumber).toHaveBeenCalledWith("25");
-    expect(found.map((card) => card.id)).toEqual(["sv3pt5-25"]);
+    // The set-size hit comes first; the named card stays in the pool for scoring to rank.
+    expect(found.map((card) => card.id)).toEqual(["sv3pt5-25", "base-58"]);
+  });
+
+  it("keeps the name+number cards when the set size was misread (F-06)", async () => {
+    // OCR read Pikachu 025/185 (really 025/165). 185 is Vivid Voltage, whose #25 is Wailmer.
+    const misread: OcrRead = {
+      text: "Pikachu\n025/185",
+      names: ["Pikachu"],
+      numbers: [{ num: "25", denom: "185", raw: "025/185" }],
+    };
+    const wailmer = { ...apiCard("swsh4-25", 185), name: "Wailmer" };
+    searchCards.mockResolvedValue([apiCard("sv3pt5-25", 165)]);
+    fetchCardsByNumber.mockResolvedValue([wailmer, apiCard("sv3pt5-25", 165)]);
+
+    const found = await lookupPool(misread);
+
+    expect(found.map((card) => card.id)).toContain("sv3pt5-25");
+    expect(found.map((card) => card.id)).toContain("swsh4-25");
+  });
+
+  it("checks later OCR numbers when the first number+set hit has the wrong name (F-06)", async () => {
+    const twoNumbers: OcrRead = {
+      text: "Charizard\n30/100\n4/102",
+      names: [],
+      numbers: [
+        { num: "30", denom: "100", raw: "30/100" },
+        { num: "4", denom: "102", raw: "4/102" },
+      ],
+    };
+    const wrong = { ...apiCard("xy-30", 100), name: "Sneasel", number: "30" };
+    const right = { ...apiCard("base1-4", 102), name: "Charizard", number: "4" };
+    fetchCardsByNumber.mockImplementation(async (num: string) => (num === "30" ? [wrong] : [right]));
+
+    const found = await lookupPool(twoNumbers);
+
+    expect(fetchCardsByNumber).toHaveBeenCalledTimes(2);
+    expect(found.map((card) => card.id)).toEqual(["xy-30", "base1-4"]);
   });
 
   it("reports a provider failure when every lookup fails", async () => {
@@ -96,6 +133,26 @@ describe("fetchCardsByIds", () => {
     expect(cards).toHaveLength(41);
     expect(queries).toHaveLength(3);
     expect(queries.every((query) => query.split(" OR ").length <= 20)).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it("looks up ids with ! or ? on their own so one failure doesn't sink the batch (F-05)", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const query = new URL(String(input)).searchParams.get("q") ?? "";
+        queries.push(query);
+        if (query.includes("!")) return new Response("bad", { status: 400 });
+        const data = ["cel25c-2_A", "base1-4"].filter((id) => query.includes(`id:"${id}"`)).map((id) => apiCard(id, 102));
+        return new Response(JSON.stringify({ data, totalCount: data.length }), { status: 200 });
+      }),
+    );
+
+    const cards = await fetchCardsByIds(["cel25c-2_A", "ex10-!", "base1-4"]);
+
+    expect(cards.map((card) => card.id).sort()).toEqual(["base1-4", "cel25c-2_A"]);
+    expect(queries.find((query) => query.includes("!"))).toBe('id:"ex10-!"');
     vi.unstubAllGlobals();
   });
 });

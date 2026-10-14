@@ -93,11 +93,24 @@ async function fetchIdBatch(ids: string[]): Promise<ApiCard[]> {
   return data;
 }
 
+// Ids like ex10-! and ex10-? are Lucene syntax upstream and can fail a whole OR query,
+// so they are looked up on their own and a failure only drops that one card.
+const RISKY_ID = /[!?]/;
+
 export async function fetchCardsByIds(ids: string[]): Promise<ApiCard[]> {
   if (ids.length === 0) return [];
+  const plain = ids.filter((id) => !RISKY_ID.test(id));
+  const risky = ids.filter((id) => RISKY_ID.test(id));
   const all: ApiCard[] = [];
-  for (let index = 0; index < ids.length; index += ID_BATCH) {
-    all.push(...(await fetchIdBatch(ids.slice(index, index + ID_BATCH))));
+  for (let index = 0; index < plain.length; index += ID_BATCH) {
+    all.push(...(await fetchIdBatch(plain.slice(index, index + ID_BATCH))));
+  }
+  for (const id of risky) {
+    try {
+      all.push(...(await fetchIdBatch([id])));
+    } catch (error) {
+      if (!(error instanceof CardPriceError)) throw error;
+    }
   }
   return dedupeCards(all);
 }
@@ -111,18 +124,45 @@ export function selectByDenom(cards: ApiCard[], denom: string): ApiCard[] | null
   return hits.length > 0 ? hits : null;
 }
 
-export function narrowByDenom(cards: ApiCard[], denom: string): ApiCard[] {
-  return selectByDenom(cards, denom) ?? cards;
+const IMAGE_HOST = "images.pokemontcg.io";
+export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+
+/** Only official card art over HTTPS; anything else from upstream data is refused. */
+export function isAllowedImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === IMAGE_HOST && !parsed.port && !parsed.username;
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchImage(url: string): Promise<Buffer> {
+  if (!isAllowedImageUrl(url)) throw new Error("image url not allowed");
   const response = await fetch(url, {
     headers: { "User-Agent": USER_AGENT, Accept: "image/*" },
     cache: "no-store",
+    redirect: "error",
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error(`image ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  const declared = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) throw new Error("image too large");
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_IMAGE_BYTES) {
+      await reader.cancel().catch(() => {});
+      throw new Error("image too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
 }
 
 export function dedupeCards(cards: ApiCard[]): ApiCard[] {

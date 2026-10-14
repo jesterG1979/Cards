@@ -32,19 +32,48 @@ async function fetchRate(base: "USD" | "EUR"): Promise<{ rate: number; date: str
   }
 }
 
+const RETRY_MS = 5 * 60 * 1000;
+
+type Rate = { rate: number; date: string };
+// Last good rate per currency, kept so one failed call doesn't blank out that currency.
+let lastUsd: Rate | null = null;
+let lastEur: Rate | null = null;
+let inFlight: Promise<FxRates> | null = null;
+
+async function loadRates(): Promise<FxRates> {
+  const [usd, eur] = await Promise.all([fetchRate("USD"), fetchRate("EUR")]);
+  if (usd) lastUsd = usd;
+  if (eur) lastEur = eur;
+  const useUsd = usd ?? lastUsd;
+  const useEur = eur ?? lastEur;
+  const rates: FxRates = {
+    usdAud: useUsd?.rate ?? null,
+    eurAud: useEur?.rate ?? null,
+    usdDate: useUsd?.date ?? null,
+    eurDate: useEur?.date ?? null,
+  };
+  if (usd && eur) {
+    cache = { at: Date.now(), rates };
+  } else if (useUsd || useEur) {
+    // Partial or total outage: serve what we have, but try again in a few minutes, not an hour.
+    cache = { at: Date.now() - TTL_MS + RETRY_MS, rates };
+  }
+  return rates;
+}
+
 export async function getRates(): Promise<FxRates> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.rates;
-  const [usd, eur] = await Promise.all([fetchRate("USD"), fetchRate("EUR")]);
-  const rates: FxRates = {
-    usdAud: usd?.rate ?? null,
-    eurAud: eur?.rate ?? null,
-    usdDate: usd?.date ?? null,
-    eurDate: eur?.date ?? null,
-  };
-  if (usd || eur) cache = { at: Date.now(), rates };
-  return rates;
+  if (!inFlight) {
+    inFlight = loadRates().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
 }
 
 export function resetRateCache(): void {
   cache = null;
+  lastUsd = null;
+  lastEur = null;
+  inFlight = null;
 }

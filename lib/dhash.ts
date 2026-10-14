@@ -1,7 +1,7 @@
 import sharp from "sharp";
 
 export async function dhash(image: Buffer): Promise<string> {
-  const { data, info } = await sharp(image, { failOn: "none" })
+  const { data, info } = await sharp(image, { failOn: "none", limitInputPixels: 40_000_000 })
     .rotate()
     .greyscale()
     .resize(9, 8, { fit: "fill" })
