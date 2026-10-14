@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { SearchScreen } from "@/components/search-screen";
 
+export const instant = false;
+
 export const metadata: Metadata = {
   title: "Search",
 };

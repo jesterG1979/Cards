@@ -1,0 +1,12 @@
+{
+  "name": "cards-120blackwood",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "account_id": "4ccc893dae11f80faf1a128c69cc8208",
+  "workers_dev": false,
+  "routes": [{ "pattern": "cards.120blackwood.com", "custom_domain": true }],
+  "observability": { "enabled": true },
+  "containers": [{ "class_name": "CardsContainer", "image": "../Dockerfile", "image_build_context": "..", "instance_type": "basic", "max_instances": 2 }],
+  "durable_objects": { "bindings": [{ "name": "CARDS", "class_name": "CardsContainer" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CardsContainer"] }]
+}
