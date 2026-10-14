@@ -52,6 +52,47 @@ if [[ ! -f "${RULE}" ]]; then
   fi
 fi
 
+# User skill store is shared across this account's Cloud Agents, including
+# agents on other repositories. Install each skill as its own directory so
+# discovery finds SKILL.md the same way it finds other user skills.
+USER_STORE="/cursor/stores/user"
+if [[ -d "${USER_STORE}" ]]; then
+  USER_SKILLS="${USER_STORE}/skills"
+  mkdir -p "${USER_SKILLS}" "${USER_STORE}/pstack"
+  # This store rejects chmod (cp fails with EPERM while setting permissions).
+  copy_tree() {
+    python3 - "$1" "$2" <<'PY'
+import os, shutil, sys
+src, dst = sys.argv[1], sys.argv[2]
+def copy(s, d):
+    if os.path.isdir(s) and not os.path.islink(s):
+        os.makedirs(d, exist_ok=True)
+        for name in os.listdir(s):
+            copy(os.path.join(s, name), os.path.join(d, name))
+    else:
+        os.makedirs(os.path.dirname(d), exist_ok=True)
+        shutil.copyfile(s, d, follow_symlinks=True)
+copy(src, dst)
+PY
+  }
+  if [[ -f "${REPO_SKILLS}/LICENSE" ]]; then
+    copy_tree "${REPO_SKILLS}/LICENSE" "${USER_STORE}/pstack/LICENSE"
+  fi
+  if [[ -f "${REPO_SKILLS}/SOURCE.md" ]]; then
+    copy_tree "${REPO_SKILLS}/SOURCE.md" "${USER_STORE}/pstack/SOURCE.md"
+  fi
+  if [[ -f "${REPO_SKILLS}/.cursor-plugin/plugin.json" ]]; then
+    copy_tree "${REPO_SKILLS}/.cursor-plugin/plugin.json" "${USER_STORE}/pstack/plugin.json"
+  fi
+  for skill_dir in "${REPO_SKILLS}"/*/; do
+    [[ -f "${skill_dir}SKILL.md" ]] || continue
+    name="$(basename "${skill_dir}")"
+    rm -rf "${USER_SKILLS}/${name}"
+    copy_tree "${skill_dir}" "${USER_SKILLS}/${name}"
+  done
+  test -f "${USER_SKILLS}/poteto-mode/SKILL.md"
+fi
+
 test -f "${HOME}/.cursor/skills/pstack/poteto-mode/SKILL.md"
 test -f "${HOME}/.cursor/plugins/pstack/skills/poteto-mode/SKILL.md"
 echo "ensure-pstack: ok poteto-mode=$(readlink -f "${HOME}/.cursor/skills/pstack/poteto-mode/SKILL.md" 2>/dev/null || echo "${HOME}/.cursor/skills/pstack/poteto-mode/SKILL.md")"
