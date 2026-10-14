@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CardMatch } from "@/components/card-match";
 import { TopBar } from "@/components/top-bar";
+import { guideCropRect } from "@/lib/guide-crop";
 import type { PricedCard } from "@/lib/types";
 
 type Candidate = { card: PricedCard; score: number; hashDistance: number | null };
@@ -19,6 +20,7 @@ type Mode = "start" | "camera" | "reading" | "result";
 export function Scanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const guideRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<Mode>("start");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,12 +100,25 @@ export function Scanner() {
   function takePhoto() {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
+    const frame = { left: 0, top: 0, width: video.videoWidth, height: video.videoHeight };
+    const guide = guideRef.current?.getBoundingClientRect();
+    const shown = video.getBoundingClientRect();
+    // Send just the guide box (plus a margin), so a light table around the card isn't
+    // mistaken for the card and the picture hash compares card to card.
+    const crop =
+      (guide &&
+        guideCropRect(
+          { width: video.videoWidth, height: video.videoHeight },
+          { left: shown.left, top: shown.top, width: shown.width, height: shown.height },
+          { left: guide.left, top: guide.top, width: guide.width, height: guide.height },
+        )) ||
+      frame;
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = crop.width;
+    canvas.height = crop.height;
     const context = canvas.getContext("2d");
     if (!context) return;
-    context.drawImage(video, 0, 0);
+    context.drawImage(video, crop.left, crop.top, crop.width, crop.height, 0, 0, crop.width, crop.height);
     canvas.toBlob(
       (blob) => {
         if (blob) void identify(blob);
@@ -125,7 +140,7 @@ export function Scanner() {
           onLoadedMetadata={() => setReady(true)}
         />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 pt-[max(4.5rem,env(safe-area-inset-top))]">
-          <div className="aspect-[63/88] h-[68%] max-h-full rounded-2xl border-4 border-sun shadow-[0_0_0_2000px_rgba(0,0,0,0.45)]" />
+          <div ref={guideRef} className="aspect-[63/88] h-[68%] max-h-full rounded-2xl border-4 border-sun shadow-[0_0_0_2000px_rgba(0,0,0,0.45)]" />
         </div>
         <p className="absolute inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] px-6 text-center text-base font-extrabold">
           Fit the whole card in the box, including the number at the bottom.

@@ -1,10 +1,49 @@
 import sharp from "sharp";
 import { CardPriceError } from "@/lib/errors";
 
+/** Largest decoded image we accept (a 12 MP phone photo is well under this). */
+export const MAX_INPUT_PIXELS = 40_000_000;
+const CARD_ASPECT = 63 / 88;
+
+/**
+ * Grow a detected bright box to a playing-card shape. A dark-bordered card only
+ * lights up its art or text box, so the raw box would cut off the name at the top
+ * and the collector number at the bottom.
+ */
+export function expandToCardAspect(
+  box: { left: number; top: number; width: number; height: number },
+  frame: { width: number; height: number },
+): { left: number; top: number; width: number; height: number } {
+  let { width, height } = box;
+  if (width / height > CARD_ASPECT) height = Math.round(width / CARD_ASPECT);
+  else width = Math.round(height * CARD_ASPECT);
+  width = Math.min(frame.width, width);
+  height = Math.min(frame.height, height);
+  const centerX = box.left + box.width / 2;
+  const centerY = box.top + box.height / 2;
+  const left = Math.min(frame.width - width, Math.max(0, Math.round(centerX - width / 2)));
+  const top = Math.min(frame.height - height, Math.max(0, Math.round(centerY - height / 2)));
+  return { left, top, width, height };
+}
+
 export async function preprocessCard(input: Buffer): Promise<Buffer> {
+  const options = { failOn: "none", limitInputPixels: MAX_INPUT_PIXELS } as const;
+  let pixels = 0;
+  try {
+    // Header only; nothing is decoded yet.
+    const header = await sharp(input, { failOn: "none", limitInputPixels: false }).metadata();
+    pixels = (header.width ?? 0) * (header.height ?? 0);
+  } catch {
+    pixels = -1;
+  }
+  if (pixels > MAX_INPUT_PIXELS) {
+    throw new CardPriceError("That photo is too big. Try another one.");
+  }
+
   let oriented: Buffer;
   try {
-    oriented = await sharp(input, { failOn: "none" }).rotate().toBuffer();
+    if (pixels < 0) throw new Error("unreadable");
+    oriented = await sharp(input, options).rotate().toBuffer();
   } catch {
     throw new CardPriceError(
       "That photo is in a format I can't read. Take the picture in the app, or use a JPEG.",
@@ -59,8 +98,14 @@ export async function preprocessCard(input: Buffer): Promise<Buffer> {
       top = Math.max(0, Math.floor((minY - padY) * scaleY));
       const right = Math.min(width, Math.ceil((maxX + 1 + padX) * scaleX));
       const bottom = Math.min(height, Math.ceil((maxY + 1 + padY) * scaleY));
-      cropWidth = Math.max(1, right - left);
-      cropHeight = Math.max(1, bottom - top);
+      const card = expandToCardAspect(
+        { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) },
+        { width, height },
+      );
+      left = card.left;
+      top = card.top;
+      cropWidth = card.width;
+      cropHeight = card.height;
     }
   }
 

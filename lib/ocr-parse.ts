@@ -75,9 +75,39 @@ const STOP = new Set([
   "immediately",
   "anger",
   "angered",
+  "attack",
+  "attacks",
+  "discard",
+  "flip",
+  "coin",
+  "heads",
+  "tails",
+  "draw",
+  "hand",
+  "benched",
+  "defending",
+  "prevent",
+  "effect",
+  "effects",
+  "height",
+  "weight",
+  "length",
+  "vmax",
+  "vstar",
+  "tera",
+  "has",
+  "are",
+  "all",
+  "its",
+  "not",
+  "may",
+  "can",
+  "one",
+  "two",
+  "put",
 ]);
 
-const NUMBER_RE = /\b([A-Z]{0,3}\d{1,3})\s*[/|]\s*([A-Z]{0,3}\d{2,3})\b/gi;
+const NUMBER_RE = /\b([A-Z]{0,3}\d{1,3}[A-Z]?)\s*[/|]\s*([A-Z]{0,3}\d{2,3})\b/gi;
 
 export function norm(value: string): string {
   return value
@@ -91,30 +121,39 @@ export function norm(value: string): string {
 
 export function canonicalNumber(raw: string): string {
   const trimmed = raw.trim().toUpperCase();
-  const match = trimmed.match(/^([A-Z]*)(\d+)$/);
+  // Optional one-letter suffix for alternate prints such as 75a.
+  const match = trimmed.match(/^([A-Z]*?)(\d+)([A-Z]?)$/);
   if (!match) return trimmed;
   let prefix = match[1];
   let digits = match[2];
+  const suffix = match[3].toLowerCase();
   // A lone O in front of the digits is almost always a misread 0.
   if (prefix.length > 0 && /^O+$/.test(prefix)) {
     digits = `${"0".repeat(prefix.length)}${digits}`;
     prefix = "";
   }
   digits = digits.replace(/^0+/, "") || "0";
-  return `${prefix}${digits}`;
+  return `${prefix}${digits}${suffix}`;
 }
 
 export function numberQueryVariants(raw: string): string[] {
   const canonical = canonicalNumber(raw);
-  const match = canonical.match(/^([A-Z]*)(\d+)$/);
+  const match = canonical.match(/^([A-Z]*)(\d+)([a-z]?)$/);
   if (!match) return [raw.trim()];
   const prefix = match[1];
   const digits = match[2];
-  return [...new Set([canonical, `${prefix}${digits.padStart(3, "0")}`, `${prefix}${digits.padStart(2, "0")}`])];
+  const suffix = match[3];
+  return [
+    ...new Set([
+      canonical,
+      `${prefix}${digits.padStart(3, "0")}${suffix}`,
+      `${prefix}${digits.padStart(2, "0")}${suffix}`,
+    ]),
+  ];
 }
 
 export function denomValue(raw: string): number | null {
-  const digits = raw.replace(/^[A-Z]+/i, "");
+  const digits = raw.replace(/^[A-Z]+/i, "").replace(/[A-Z]$/i, "");
   const value = parseInt(digits, 10);
   return Number.isFinite(value) ? value : null;
 }
@@ -123,7 +162,9 @@ function plausible(num: string, denom: string): boolean {
   const n = denomValue(num);
   const d = denomValue(denom);
   if (n == null || d == null) return false;
-  return d >= 30 && d <= 400 && n >= 1 && n <= 400;
+  // Celebrations (25), McDonald's (12-25) and other small sets print totals under 30.
+  // Below 10 is too easy to confuse with fractions in attack text ("1/4").
+  return d >= 10 && d <= 400 && n >= 1 && n <= 400;
 }
 
 function digitFold(text: string): string {
@@ -165,10 +206,13 @@ function collectNames(text: string): string[] {
   const found: { word: string; index: number }[] = [];
   const seen = new Set<string>();
   lines.forEach((line, lineIndex) => {
-    for (const match of line.matchAll(/\p{L}{4,}/gu)) {
+    for (const match of line.matchAll(/\p{L}{3,}/gu)) {
       const word = match[0];
       const key = norm(word);
-      if (key.length < 4 || STOP.has(key) || seen.has(key)) continue;
+      // Three-letter names (Mew, Muk) only count near the top, where the card name is, and
+      // only when capitalised, so body words like "has" or "two" don't leak in.
+      const shortName = key.length === 3 && lineIndex < 3 && /^\p{Lu}/u.test(word);
+      if ((key.length < 4 && !shortName) || STOP.has(key) || seen.has(key)) continue;
       seen.add(key);
       found.push({ word, index: lineIndex });
     }
@@ -185,14 +229,25 @@ export function parseOcr(text: string): OcrRead {
   };
 }
 
+function hasWord(text: string, word: string): boolean {
+  return ` ${text} `.includes(` ${word} `);
+}
+
+/**
+ * How well a card name matches the OCR text, 0 to 1. Whole words only, so "Mew"
+ * does not match "Mewtwo", "Abra" does not match "Kadabra" and "N" does not match
+ * every word containing an n.
+ */
 export function nameMatch(cardName: string, blob: string): number {
   const name = norm(cardName);
   const text = norm(blob);
   if (!name || !text) return 0;
-  if (text.includes(name)) return 1;
+  if (hasWord(text, name)) return 1;
   const tokens = name.split(" ").filter((token) => token.length > 2);
-  if (tokens.length > 0 && tokens.every((token) => text.includes(token))) return 0.85;
+  if (tokens.length > 0 && tokens.every((token) => hasWord(text, token))) return 0.85;
   const longest = [...tokens].sort((a, b) => b.length - a.length)[0];
-  if (longest && longest.length >= 4 && text.includes(longest)) return 0.55;
+  if (longest && longest.length >= 4 && hasWord(text, longest)) return 0.55;
+  // OCR sometimes glues the name to the next word ("pikachuhp"); allow a weak hit for longer names.
+  if (name.length >= 5 && text.includes(name)) return 0.55;
   return 0;
 }

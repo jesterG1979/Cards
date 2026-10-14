@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { CardPriceError } from "@/lib/errors";
 import { getRates } from "@/lib/fx";
 import { searchCards } from "@/lib/pokemon";
@@ -5,6 +6,8 @@ import { toPricedCard } from "@/lib/prices";
 import { buildSearchQuery } from "@/lib/search-query";
 
 export async function GET(request: Request) {
+  // Per-request data: tell Next not to try prerendering this handler at build time.
+  await connection();
   try {
     const query = new URL(request.url).searchParams.get("q") ?? "";
     const lucene = buildSearchQuery(query);

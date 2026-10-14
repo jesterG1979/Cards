@@ -1,4 +1,5 @@
 import { CardPriceError } from "@/lib/errors";
+import { parseLimitedForm } from "@/lib/body";
 import { identifyCard } from "@/lib/identify";
 
 export const maxDuration = 60;
@@ -12,7 +13,7 @@ let activeScans = 0;
 export async function POST(request: Request) {
   const declared = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-    return Response.json({ error: "That photo is too big. Try another one." }, { status: 400 });
+    return Response.json({ error: "That photo is too big. Try another one." }, { status: 413 });
   }
   if (activeScans >= MAX_CONCURRENT) {
     return Response.json({ error: "The scanner is busy. Try again in a moment." }, { status: 429 });
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
 
   activeScans += 1;
   try {
-    const form = await request.formData();
+    const form = await parseLimitedForm(request, MAX_BODY_BYTES);
     const file = form.get("image");
     if (!(file instanceof File)) {
       throw new CardPriceError("Choose a photo of one card.");
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     if (file.size <= 0) throw new CardPriceError("That photo was empty.");
     if (file.size > MAX_BYTES) throw new CardPriceError("That photo is too big. Try another one.");
     const image = Buffer.from(await file.arrayBuffer());
-    const result = await identifyCard(image);
+    const result = await identifyCard(image, request.signal);
     return Response.json({
       names: result.names,
       numbers: result.numbers,

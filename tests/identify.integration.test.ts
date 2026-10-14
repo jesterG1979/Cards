@@ -13,7 +13,8 @@ async function download(url: string): Promise<Buffer> {
   return Buffer.from(await response.arrayBuffer());
 }
 
-describe("identify a modern card photo", () => {
+// Hits api.pokemontcg.io, images.pokemontcg.io and Frankfurter. Run with LIVE_TESTS=1 (npm run test:live).
+describe.skipIf(!process.env.LIVE_TESTS)("identify a modern card photo", () => {
   it("names Pikachu from the 151 set and prices it in AUD", async () => {
     let photoUrl = "";
     for (let attempt = 0; attempt < 3 && !photoUrl; attempt += 1) {
