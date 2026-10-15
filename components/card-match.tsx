@@ -6,7 +6,7 @@ import { CardImage } from "@/components/card-image";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { readCollection, upsertItem, writeCollection } from "@/lib/collection";
 import { collectorLabel, formatAud, formatOriginal, formatSourceDate } from "@/lib/format";
-import { collectionQuote, priceBoard } from "@/lib/prices";
+import { collectionQuote, priceBoard, secondaryLabel } from "@/lib/prices";
 import { readRecent, rememberScan, writeRecent } from "@/lib/recent";
 import type { CollectionItem, PricedCard, PriceQuote } from "@/lib/types";
 import { cn } from "cn";
@@ -64,22 +64,6 @@ export function CardMatch({
     adding.current = false;
   }, [selectedId]);
 
-  useEffect(() => {
-    if (!selected || !board) return;
-    const face = board.faces.find((item) => item.variantKey === variantKey) ?? null;
-    writeRecent(
-      rememberScan(readRecent(), {
-        cardId: selected.id,
-        name: selected.name,
-        setName: selected.setName,
-        number: collectorLabel(selected.number, selected.printedTotal),
-        image: selected.imageSmall,
-        amountAud: face?.headline?.amountAud ?? null,
-        seenAt: new Date().toISOString(),
-      }),
-    );
-  }, [selected, board, variantKey]);
-
   if (!selected || !board) {
     const sawNumber = numbers?.[0];
     const sawName = names?.[0];
@@ -109,15 +93,32 @@ export function CardMatch({
   }
 
   const unsure = (candidates[0]?.score ?? 0) < 70;
-  const face = board.faces.find((item) => item.variantKey === variantKey) ?? null;
+  const pricedBoard = board;
+  const face = pricedBoard.faces.find((item) => item.variantKey === variantKey) ?? null;
   const activeKey = face?.variantKey ?? null;
   const others = candidates.length - 1;
   const tags = [selected.rarity, ...selected.subtypes].filter(Boolean).join(" · ");
   const cardAlt = `${selected.name}, ${selected.setName}`;
 
+  function remember(key: string) {
+    const picked = pricedBoard.faces.find((item) => item.variantKey === key) ?? null;
+    writeRecent(
+      rememberScan(readRecent(), {
+        cardId: selected.id,
+        name: selected.name,
+        setName: selected.setName,
+        number: collectorLabel(selected.number, selected.printedTotal),
+        image: selected.imageSmall,
+        amountAud: picked?.headline?.amountAud ?? null,
+        seenAt: new Date().toISOString(),
+      }),
+    );
+  }
+
   function addCard() {
     if (!face || !activeKey || adding.current) return;
     adding.current = true;
+    remember(activeKey);
     const quote = collectionQuote(selected.quotes, activeKey);
     const saved: CollectionItem = {
       cardId: selected.id,
@@ -225,9 +226,7 @@ export function CardMatch({
             ) : null}
             {face.secondary ? (
               <p className="mt-2 text-sm text-muted-foreground" data-testid="price-cardmarket">
-                {face.secondary.variantKey === face.variantKey
-                  ? sourceLine(face.secondary)
-                  : `Cardmarket average · ${formatAud(face.secondary.amountAud)} · ${formatSourceDate(face.secondary.sourceDate)}`}
+                {secondaryLabel(face.variantKey, face.secondary) ?? sourceLine(face.secondary)}
               </p>
             ) : null}
           </>
@@ -237,31 +236,40 @@ export function CardMatch({
           </p>
         )}
         {board.editionNote ? <p className="mt-2 text-sm font-bold">{board.editionNote}</p> : null}
+        {board.faces.length > 1 ? (
+          <fieldset className="mt-3 border-0 p-0">
+            <legend className="sr-only">Edition</legend>
+            <div className="flex flex-wrap gap-2">
+              {board.faces.map((item) => {
+                const pressed = item.variantKey === activeKey;
+                return (
+                  <label
+                    key={item.variantKey}
+                    className={cn(
+                      "min-h-12 flex-1 cursor-pointer rounded-xl px-3 py-2 text-center text-base font-extrabold",
+                      pressed ? "bg-ink text-white" : "bg-sand text-foreground ring-1 ring-border",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name={`edition-${selected.id}`}
+                      value={item.variantKey}
+                      checked={pressed}
+                      data-testid="edition"
+                      className="sr-only"
+                      onChange={() => {
+                        setVariantKey(item.variantKey);
+                        remember(item.variantKey);
+                      }}
+                    />
+                    {item.variantLabel}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : null}
       </div>
-
-      {board.faces.length > 1 ? (
-        <div role="radiogroup" aria-label="Edition" className="flex flex-wrap gap-2">
-          {board.faces.map((item) => {
-            const pressed = item.variantKey === activeKey;
-            return (
-              <button
-                key={item.variantKey}
-                type="button"
-                role="radio"
-                aria-checked={pressed}
-                data-testid="edition"
-                onClick={() => setVariantKey(item.variantKey)}
-                className={cn(
-                  "min-h-12 flex-1 rounded-xl px-3 py-2 text-base font-extrabold",
-                  pressed ? "bg-ink text-white" : "bg-card text-foreground ring-1 ring-border",
-                )}
-              >
-                {item.variantLabel}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
 
       {added ? (
         <div className="flex flex-col gap-3">
@@ -277,6 +285,11 @@ export function CardMatch({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          {!face ? (
+            <p className="text-center text-sm font-bold" data-testid="pick-edition">
+              Pick an edition to add
+            </p>
+          ) : null}
           <Button type="button" size="xl" onClick={addCard} data-testid="add-card" disabled={!face}>
             Add to My cards
           </Button>

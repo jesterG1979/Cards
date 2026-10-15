@@ -136,13 +136,8 @@ export function HomeScreen({ initialQuery }: { initialQuery: string }) {
     );
   }
 
-  const hero = !ready
-    ? "…"
-    : items.length === 0
-      ? "No cards yet"
-      : value.pricedCopies === 0
-        ? "No prices yet"
-        : formatAud(value.aud);
+  const empty = ready && items.length === 0;
+  const hero = !ready ? "…" : empty ? "" : value.pricedCopies === 0 ? "No prices yet" : formatAud(value.aud);
 
   return (
     <main className="flex flex-1 flex-col gap-4 px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -150,9 +145,15 @@ export function HomeScreen({ initialQuery }: { initialQuery: string }) {
         <p className="text-sm font-bold text-muted-foreground">
           My cards{ready && copies > 0 ? ` · ${copies} ${copies === 1 ? "card" : "cards"}` : ""}
         </p>
-        <p className="text-5xl font-extrabold tracking-tight" data-testid="home-total">
-          {hero}
-        </p>
+        {empty ? (
+          <p className="text-lg font-bold" data-testid="home-total">
+            Scan your first card
+          </p>
+        ) : (
+          <p className="text-5xl font-extrabold tracking-tight" data-testid="home-total">
+            {hero}
+          </p>
+        )}
         {newest ? <p className="text-sm text-muted-foreground">Prices from {formatSourceDate(newest)}</p> : null}
         {ready && items.length > 0 ? (
           <Link href="/collection" className="mt-1 inline-flex text-base font-extrabold text-sea">

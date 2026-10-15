@@ -17,6 +17,7 @@ import {
   useIsClient,
   writeCollection,
 } from "@/lib/collection";
+import { deliverCollectionCsv } from "@/lib/csv-share";
 import { displayNumber, formatAud, formatSourceDate } from "@/lib/format";
 import type { CollectionItem, PricedCard } from "@/lib/types";
 import { cn } from "cn";
@@ -27,6 +28,12 @@ export function CollectionScreen() {
   const [note, setNote] = useState<string | null>(null);
   const [undo, setUndo] = useState<CollectionItem | null>(null);
   const idList = [...new Set(items.map((item) => item.cardId))].join(",");
+
+  useEffect(() => {
+    if (!undo) return;
+    const timer = window.setTimeout(() => setUndo(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
 
   useEffect(() => {
     if (!ready || !idList) return;
@@ -75,13 +82,24 @@ export function CollectionScreen() {
   }
 
   function exportCsv() {
-    const blob = new Blob([collectionToCsv(readCollection())], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "my-cards.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    const csv = collectionToCsv(readCollection());
+    void deliverCollectionCsv(csv, "my-cards.csv", {
+      canShareFiles: (file) => navigator.canShare?.({ files: [file] }) ?? false,
+      shareFiles: (file) => navigator.share({ files: [file] }),
+      createObjectURL: (blob) => URL.createObjectURL(blob),
+      revokeObjectURL: (url) => URL.revokeObjectURL(url),
+      download: (url, fileName) => {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        link.click();
+      },
+      later: (callback, delayMs) => {
+        window.setTimeout(callback, delayMs);
+      },
+    }).catch(() => {
+      // The share sheet was dismissed. The list stays on this phone.
+    });
   }
 
   const value = totalValue(items);

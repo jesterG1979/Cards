@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "reac
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CardMatch } from "@/components/card-match";
-import { frameSteady, meanAbsDiff } from "@/lib/frame";
+import { autoSnapReady, frameSteady, holdProgress, meanAbsDiff, SNAP_COOLDOWN_MS } from "@/lib/frame";
 import { formatAud } from "@/lib/format";
 import type { PricedCard } from "@/lib/types";
 import { cn } from "cn";
@@ -35,6 +35,9 @@ export function Scanner() {
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const previewRef = useRef<string | null>(null);
+  const cooldownUntil = useRef(0);
+  const holdFillRef = useRef<HTMLDivElement>(null);
+  const holdMeterRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "camera" });
   const [ready, setReady] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
@@ -168,7 +171,12 @@ export function Scanner() {
         if (previous) {
           diffs.push(meanAbsDiff(previous, data));
           if (diffs.length > 8) diffs.shift();
-          if (frameSteady(diffs)) {
+          const progress = holdProgress(diffs);
+          if (holdFillRef.current) holdFillRef.current.style.transform = `scaleY(${progress})`;
+          if (holdMeterRef.current) {
+            holdMeterRef.current.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+          }
+          if (frameSteady(diffs) && autoSnapReady(Date.now(), cooldownUntil.current)) {
             stopped = true;
             captureFrame();
             return;
@@ -238,7 +246,12 @@ export function Scanner() {
           names={phase.result.names}
           numbers={phase.result.numbers}
           againLabel="Back to camera"
-          onAgain={() => setPhase({ kind: "camera" })}
+          onAgain={() => {
+            if (phase.result.candidates.length === 0) {
+              cooldownUntil.current = Date.now() + SNAP_COOLDOWN_MS;
+            }
+            setPhase({ kind: "camera" });
+          }}
           onAdded={(item) => {
             setTray((current) => [
               { name: item.name, number: item.number, amountAud: item.amountAud },
@@ -282,10 +295,33 @@ export function Scanner() {
         onLoadedMetadata={() => setReady(true)}
       />
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-        <div className="aspect-[63/88] h-[62%] max-h-full rounded-2xl border-4 border-sun shadow-[0_0_0_2000px_rgba(0,0,0,0.45)]" />
+        <div className="relative aspect-[63/88] h-[62%] max-h-full overflow-hidden rounded-2xl border-4 border-sun shadow-[0_0_0_2000px_rgba(0,0,0,0.45)]">
+          <div
+            ref={holdFillRef}
+            data-testid="hold-progress"
+            className="absolute inset-x-0 bottom-0 h-full origin-bottom bg-sun/40"
+            style={{ transform: "scaleY(0)" }}
+          />
+          <div
+            ref={holdMeterRef}
+            role="progressbar"
+            aria-label="Hold steady"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={0}
+            className="sr-only"
+          />
+        </div>
       </div>
+      <Link
+        href="/"
+        className="absolute right-5 top-[max(0.75rem,env(safe-area-inset-top))] z-10 font-extrabold"
+        data-testid="scan-done"
+      >
+        Done{tray.length > 0 ? ` (${tray.length})` : ""}
+      </Link>
       {banner ? (
-        <p className="absolute inset-x-5 top-[max(0.75rem,env(safe-area-inset-top))] rounded-2xl bg-white px-4 py-3 font-bold text-ink" role="alert">
+        <p className="absolute inset-x-5 top-[max(3.25rem,calc(env(safe-area-inset-top)+2.5rem))] z-10 rounded-2xl bg-white px-4 py-3 pr-16 font-bold text-ink" role="alert">
           {banner}
         </p>
       ) : null}
@@ -322,24 +358,9 @@ export function Scanner() {
             Torch
           </Button>
         ) : (
-          <Link
-            href="/"
-            className="inline-flex h-12 items-center rounded-xl bg-secondary px-4 font-extrabold text-ink"
-            data-testid="scan-done"
-          >
-            Done{tray.length > 0 ? ` (${tray.length})` : ""}
-          </Link>
+          <span className="h-12 w-16" aria-hidden="true" />
         )}
       </div>
-      {torchOk ? (
-        <Link
-          href="/"
-          className="absolute right-5 top-[max(0.75rem,env(safe-area-inset-top))] font-extrabold"
-          data-testid="scan-done"
-        >
-          Done{tray.length > 0 ? ` (${tray.length})` : ""}
-        </Link>
-      ) : null}
       <input ref={fileRef} data-testid="photo-input" type="file" accept="image/*" className="sr-only" onChange={onFile} />
     </div>
   );
