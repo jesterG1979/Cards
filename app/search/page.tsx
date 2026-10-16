@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { SearchScreen } from "@/components/search-screen";
+import { redirect } from "next/navigation";
 
 export const instant = false;
 
@@ -9,6 +9,6 @@ export const metadata: Metadata = {
 
 export default async function Page(props: PageProps<"/search">) {
   const params = await props.searchParams;
-  const initialQuery = typeof params.q === "string" ? params.q : "";
-  return <SearchScreen initialQuery={initialQuery} />;
+  const query = typeof params.q === "string" ? params.q : "";
+  redirect(query ? `/?q=${encodeURIComponent(query)}` : "/");
 }

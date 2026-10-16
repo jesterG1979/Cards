@@ -1,3 +1,4 @@
+import { formatAud, formatSourceDate } from "@/lib/format";
 import type { ApiCard, FxRates, PriceQuote, PricedCard, TcgPrice } from "@/lib/types";
 
 const VARIANT_LABELS: Record<string, string> = {
@@ -158,7 +159,7 @@ export type QuoteGroup = {
   quotes: PriceQuote[];
 };
 
-const VARIANT_ORDER = ["normal", "reverseHolofoil", "holofoil", "1stEditionNormal", "1stEditionHolofoil"];
+const VARIANT_ORDER = ["normal", "holofoil", "reverseHolofoil", "1stEditionNormal", "1stEditionHolofoil"];
 
 export function groupQuotes(quotes: PriceQuote[]): QuoteGroup[] {
   const groups = new Map<string, QuoteGroup>();
@@ -184,10 +185,70 @@ export function preferredVariant(quotes: PriceQuote[]): string {
     groups.find((group) => group.variantKey === key && group.quotes.some((item) => item.amountAud != null));
   return (
     priced("normal")?.variantKey ??
+    priced("holofoil")?.variantKey ??
+    priced("reverseHolofoil")?.variantKey ??
     groups.find((group) => group.quotes.some((item) => item.amountAud != null))?.variantKey ??
     groups[0]?.variantKey ??
     "normal"
   );
+}
+
+export const EDITION_NOTE = "Edition not checked. 1st Edition cards can be worth much more.";
+
+export type PriceFace = {
+  variantKey: string;
+  variantLabel: string;
+  headline: PriceQuote | null;
+  secondary: PriceQuote | null;
+};
+
+export type PriceBoard = {
+  faces: PriceFace[];
+  askEdition: boolean;
+  editionNote: string | null;
+  defaultKey: string | null;
+};
+
+function editionFamily(key: string): "1st" | "unlimited" | "shadowless" | null {
+  const lower = key.toLowerCase();
+  if (lower.startsWith("1st")) return "1st";
+  if (lower.startsWith("unlimited")) return "unlimited";
+  if (lower.startsWith("shadowless")) return "shadowless";
+  return null;
+}
+
+export function priceBoard(quotes: PriceQuote[], releaseDate: string | null): PriceBoard {
+  const groups = groupQuotes(quotes);
+  const average =
+    quotes.find((quote) => quote.source === "Cardmarket" && quote.variantKey === "cardmarket") ?? null;
+  const printingGroups = groups.filter((group) => group.variantKey !== "cardmarket");
+  const sourceGroups = printingGroups.length > 0 ? printingGroups : groups;
+  const families = new Set(
+    sourceGroups
+      .map((group) => editionFamily(group.variantKey))
+      .filter((family): family is NonNullable<typeof family> => family != null),
+  );
+  const askEdition = families.size >= 2;
+  const faces: PriceFace[] = sourceGroups.map((group) => {
+    const headline = group.quotes.find((quote) => quote.source === "TCGplayer") ?? null;
+    const matched = group.quotes.find((quote) => quote.source === "Cardmarket") ?? null;
+    return {
+      variantKey: group.variantKey,
+      variantLabel: group.variantLabel,
+      headline,
+      secondary: matched ?? average,
+    };
+  });
+  const vintage = releaseDate != null && releaseDate < "2003-01-01";
+  const editionNote = !askEdition && vintage && families.size === 0 ? EDITION_NOTE : null;
+  const quoted = sourceGroups.flatMap((group) => group.quotes);
+  const defaultKey = askEdition || quoted.length === 0 ? null : preferredVariant(quoted);
+  return { faces, askEdition, editionNote, defaultKey };
+}
+
+export function secondaryLabel(variantKey: string, quote: PriceQuote): string | null {
+  if (editionFamily(variantKey) == null || quote.variantKey === variantKey) return null;
+  return `Cardmarket, all editions · ${formatAud(quote.amountAud)} · ${formatSourceDate(quote.sourceDate)}`;
 }
 
 export function collectionQuote(quotes: PriceQuote[], variantKey: string): PriceQuote | null {

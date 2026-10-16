@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
+import { displayNumber } from "@/lib/format";
 import { collectionQuote } from "@/lib/prices";
 import type { CollectionItem, PricedCard } from "@/lib/types";
 
@@ -82,8 +83,9 @@ export function applyFreshPrices(items: CollectionItem[], cards: PricedCard[]): 
       name: card.name,
       setName: card.setName,
       number: card.number,
+      printedTotal: card.printedTotal,
       rarity: card.rarity,
-      image: card.imageSmall,
+      image: card.imageSmall ?? item.image,
       variantLabel: quote?.variantLabel ?? item.variantLabel,
       amountAud: quote?.amountAud ?? null,
       priceSource: quote?.source ?? null,
@@ -125,6 +127,44 @@ function subscribe(onStoreChange: () => void): () => void {
 export function useCollection(): CollectionItem[] {
   const raw = useSyncExternalStore(subscribe, () => localStorage.getItem(KEY), () => null);
   return useMemo(() => parseStored(raw), [raw]);
+}
+
+export function removeItem(
+  items: CollectionItem[],
+  cardId: string,
+  variantKey: string,
+): { items: CollectionItem[]; removed: CollectionItem | null } {
+  const removed = items.find((item) => item.cardId === cardId && item.variantKey === variantKey) ?? null;
+  return {
+    items: items.filter((item) => !(item.cardId === cardId && item.variantKey === variantKey)),
+    removed,
+  };
+}
+
+function csvCell(value: string | number | null | undefined): string {
+  const text = value == null ? "" : String(value);
+  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+export function collectionToCsv(items: CollectionItem[]): string {
+  const lines = ["name,set,number,variant,quantity,price_aud,source,price_date,saved_at"];
+  for (const item of items) {
+    lines.push(
+      [
+        csvCell(item.name),
+        csvCell(item.setName),
+        csvCell(displayNumber(item.number, item.printedTotal)),
+        csvCell(item.variantLabel),
+        String(item.quantity),
+        item.amountAud == null ? "" : item.amountAud.toFixed(2),
+        csvCell(item.priceSource),
+        csvCell(item.priceDate),
+        csvCell(item.savedAt),
+      ].join(","),
+    );
+  }
+  return lines.join("\n");
 }
 
 export function useIsClient(): boolean {

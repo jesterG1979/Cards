@@ -1,4 +1,6 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
 import { cn } from "cn";
 
 export function CardImage({
@@ -10,14 +12,18 @@ export function CardImage({
   alt: string;
   className?: string;
 }) {
-  if (!src) return <div className={cn("bg-muted", className)} />;
+  const [failed, setFailed] = useState(false);
+  const showBack = !src || failed;
   return (
-    <Image
-      src={src}
-      alt={alt}
-      width={245}
-      height={342}
-      className={className}
+    // Plain img so a failed optimizer response cannot be shown as the picture.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={showBack ? "/card-back.svg" : src}
+      alt={alt || "Card back"}
+      className={cn("bg-muted object-cover", className)}
+      onError={() => {
+        if (!failed) setFailed(true);
+      }}
     />
   );
 }

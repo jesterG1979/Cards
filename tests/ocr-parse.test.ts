@@ -47,4 +47,13 @@ describe("search query", () => {
   it("rejects an empty search", () => {
     expect(() => buildSearchQuery("   ")).toThrow(/card name/i);
   });
+
+  it("searches a set number without a name", () => {
+    expect(buildSearchQuery("25/165")).toBe(
+      '(number:"25" OR number:"025") (set.printedTotal:165 OR set.total:165)',
+    );
+    expect(buildSearchQuery("pikachu 4/102")).toBe(
+      'name:"*pikachu*" (number:"4" OR number:"004" OR number:"04") (set.printedTotal:102 OR set.total:102)',
+    );
+  });
 });
