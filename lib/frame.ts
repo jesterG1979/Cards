@@ -26,6 +26,13 @@ export function autoSnapReady(now: number, blockedUntil: number): boolean {
   return now >= blockedUntil;
 }
 
+export type SnapPause = "no-match" | "failed" | "cancel" | "added";
+
+export function snapCooldownUntil(now: number, pause: SnapPause): number {
+  if (pause === "no-match" || pause === "failed") return now + SNAP_COOLDOWN_MS;
+  return now;
+}
+
 export function meanAbsDiff(previous: Uint8ClampedArray, next: Uint8ClampedArray): number {
   const samples = Math.floor(Math.min(previous.length, next.length) / 4);
   if (samples === 0) return 0;

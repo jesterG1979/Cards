@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "reac
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { CardMatch } from "@/components/card-match";
-import { autoSnapReady, frameSteady, holdProgress, meanAbsDiff, SNAP_COOLDOWN_MS } from "@/lib/frame";
+import { autoSnapReady, frameSteady, holdProgress, meanAbsDiff, snapCooldownUntil } from "@/lib/frame";
 import { formatAud } from "@/lib/format";
 import type { PricedCard } from "@/lib/types";
 import { cn } from "cn";
@@ -116,6 +116,7 @@ export function Scanner() {
       setPhase({ kind: "confirm", result: payload });
     } catch (caught) {
       if (caught instanceof Error && caught.name === "AbortError") return;
+      cooldownUntil.current = snapCooldownUntil(Date.now(), "failed");
       const message = caught instanceof Error ? caught.message : "";
       setBanner(
         message === "Failed to fetch"
@@ -247,9 +248,8 @@ export function Scanner() {
           numbers={phase.result.numbers}
           againLabel="Back to camera"
           onAgain={() => {
-            if (phase.result.candidates.length === 0) {
-              cooldownUntil.current = Date.now() + SNAP_COOLDOWN_MS;
-            }
+            const pause = phase.result.candidates.length === 0 ? "no-match" : "cancel";
+            cooldownUntil.current = snapCooldownUntil(Date.now(), pause);
             setPhase({ kind: "camera" });
           }}
           onAdded={(item) => {
@@ -315,7 +315,7 @@ export function Scanner() {
       </div>
       <Link
         href="/"
-        className="absolute right-5 top-[max(0.75rem,env(safe-area-inset-top))] z-10 font-extrabold"
+        className="absolute right-5 top-[max(0.75rem,env(safe-area-inset-top))] z-10 inline-flex min-h-[44px] min-w-[44px] items-center justify-center px-2 font-extrabold"
         data-testid="scan-done"
       >
         Done{tray.length > 0 ? ` (${tray.length})` : ""}
@@ -325,8 +325,10 @@ export function Scanner() {
           {banner}
         </p>
       ) : null}
-      <p className="absolute inset-x-5 bottom-36 text-center text-base font-extrabold">
-        Hold steady. The photo is taken when the card stops moving.
+      <p className="absolute inset-x-5 bottom-36 flex justify-center">
+        <span className="max-w-sm rounded-full bg-black/80 px-4 py-2 text-center text-base font-extrabold text-white">
+          Hold steady. The photo is taken when the card stops moving.
+        </span>
       </p>
       {latest ? (
         <div

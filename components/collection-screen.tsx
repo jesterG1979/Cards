@@ -73,6 +73,7 @@ export function CollectionScreen() {
     const result = removeItem(items, item.cardId, item.variantKey);
     update(result.items);
     setUndo(result.removed);
+    if (result.items.length === 0) setNote(null);
   }
 
   function restore() {
@@ -110,9 +111,20 @@ export function CollectionScreen() {
     return right - left;
   });
 
+  const empty = ready && items.length === 0;
+
   return (
     <div className="flex min-h-dvh flex-col">
       <TopBar title="My cards" />
+      {empty ? (
+        <div className="flex flex-col gap-4 px-5 py-5">
+          <p className="text-lg">No cards yet. Scan one, then tap Add to My cards.</p>
+          <Link href="/scan" className={cn(buttonVariants({ size: "xl" }), "w-full")}>
+            Scan a card
+          </Link>
+        </div>
+      ) : (
+        <>
       <div className="px-5 py-5">
         <p className="text-base font-bold text-muted-foreground">Together they&apos;re worth</p>
         <p className="text-5xl font-extrabold tracking-tight" data-testid="collection-total">
@@ -129,15 +141,6 @@ export function CollectionScreen() {
           ) : null}
         </div>
       </div>
-
-      {ready && items.length === 0 ? (
-        <div className="flex flex-col gap-4 px-5">
-          <p className="text-lg">No cards yet. Scan one, then tap Add to My cards.</p>
-          <Link href="/scan" className={cn(buttonVariants({ size: "xl" }), "w-full")}>
-            Scan a card
-          </Link>
-        </div>
-      ) : (
         <ul className="flex flex-col gap-3 px-5 pb-28">
           {rows.map((item) => (
             <li key={`${item.cardId}:${item.variantKey}`} className="rounded-2xl bg-card p-3 shadow-sm ring-1 ring-border">
@@ -204,6 +207,7 @@ export function CollectionScreen() {
             </li>
           ))}
         </ul>
+        </>
       )}
 
       {undo ? (

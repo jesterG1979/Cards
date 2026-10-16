@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoSnapReady, frameSteady, holdProgress, meanAbsDiff, SNAP_COOLDOWN_MS } from "@/lib/frame";
+import { autoSnapReady, frameSteady, holdProgress, meanAbsDiff, SNAP_COOLDOWN_MS, snapCooldownUntil } from "@/lib/frame";
 
 describe("frame steadiness", () => {
   it("fires after a move and then a hold", () => {
@@ -19,10 +19,14 @@ describe("frame steadiness", () => {
     expect(holdProgress([12, 0.4, 0.3, 0.2])).toBe(1);
   });
 
-  it("waits a second and a half after a no-match", () => {
+  it("waits a second and a half after a no-match or a failed read", () => {
     expect(SNAP_COOLDOWN_MS).toBe(1500);
     expect(autoSnapReady(1000, 2500)).toBe(false);
     expect(autoSnapReady(2500, 2500)).toBe(true);
+    expect(snapCooldownUntil(1000, "no-match")).toBe(2500);
+    expect(snapCooldownUntil(1000, "failed")).toBe(2500);
+    expect(snapCooldownUntil(1000, "cancel")).toBe(1000);
+    expect(snapCooldownUntil(1000, "added")).toBe(1000);
   });
 
   it("measures how much the sampled pixels changed", () => {

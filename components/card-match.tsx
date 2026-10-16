@@ -246,8 +246,8 @@ export function CardMatch({
                   <label
                     key={item.variantKey}
                     className={cn(
-                      "min-h-12 flex-1 cursor-pointer rounded-xl px-3 py-2 text-center text-base font-extrabold",
-                      pressed ? "bg-ink text-white" : "bg-sand text-foreground ring-1 ring-border",
+                      "min-h-12 flex-1 cursor-pointer rounded-xl px-3 py-2 text-center text-base font-extrabold has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-sea",
+                      pressed ? "bg-ink text-white" : "bg-sand text-foreground ring-2 ring-sand-edge",
                     )}
                   >
                     <input
