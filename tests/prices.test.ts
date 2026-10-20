@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { collectionQuote, quotesForCard, toAud } from "@/lib/prices";
+import { formatAud } from "@/lib/format";
+import { collectionQuote, preferredVariant, priceBoard, quotesForCard, secondaryLabel, toAud } from "@/lib/prices";
 import type { ApiCard, FxRates } from "@/lib/types";
 
 const rates: FxRates = {
@@ -145,5 +146,81 @@ describe("AUD prices", () => {
     expect(europe?.amountAud).toBe(toAud(1.5, 1.6032));
     expect(collectionQuote(quotes, "1stEditionHolofoil")).toBeNull();
     expect(collectionQuote(quotes, "unlimitedHolofoil")?.source).toBe("TCGplayer");
+  });
+
+  it("leads with TCGplayer and asks when two editions exist", () => {
+    const quotes = quotesForCard(
+      card({
+        tcgplayer: {
+          updatedAt: "2026/10/13",
+          prices: {
+            "1stEditionHolofoil": { market: null },
+            unlimitedHolofoil: { market: 3 },
+          },
+        },
+        cardmarket: { updatedAt: "2026/06/30", prices: { averageSellPrice: 1.5 } },
+      }),
+      rates,
+    );
+    const board = priceBoard(quotes, "1999-01-09");
+    expect(board.askEdition).toBe(true);
+    expect(board.defaultKey).toBeNull();
+    expect(board.editionNote).toBeNull();
+    const unlimited = board.faces.find((face) => face.variantKey === "unlimitedHolofoil");
+    const first = board.faces.find((face) => face.variantKey === "1stEditionHolofoil");
+    expect(unlimited?.headline?.source).toBe("TCGplayer");
+    expect(unlimited?.headline?.amountAud).toBe(toAud(3, 1.4339));
+    expect(first?.headline?.amountAud).toBeNull();
+    expect(first?.secondary?.source).toBe("Cardmarket");
+    expect(first?.secondary?.amountAud).toBe(toAud(1.5, 1.6032));
+    expect(board.faces.some((face) => face.variantKey === "cardmarket")).toBe(false);
+    expect(first?.secondary ? secondaryLabel(first.variantKey, first.secondary) : null).toBe(
+      `Cardmarket, all editions · ${formatAud(toAud(1.5, 1.6032))} · 30 Jun 2026`,
+    );
+    expect(unlimited?.secondary ? secondaryLabel(unlimited.variantKey, unlimited.secondary) : null).toBe(
+      `Cardmarket, all editions · ${formatAud(toAud(1.5, 1.6032))} · 30 Jun 2026`,
+    );
+  });
+
+  it("prefers holofoil over reverse holo on a modern holo rare", () => {
+    const quotes = quotesForCard(
+      card({
+        tcgplayer: {
+          updatedAt: "2026/10/13",
+          prices: {
+            reverseHolofoil: { market: 1 },
+            holofoil: { market: 12 },
+          },
+        },
+        cardmarket: { updatedAt: "2026/06/30", prices: { averageSellPrice: 8 } },
+      }),
+      rates,
+    );
+    const board = priceBoard(quotes, "2023-09-22");
+    expect(preferredVariant(quotes)).toBe("holofoil");
+    expect(board.defaultKey).toBe("holofoil");
+    expect(board.faces[0]?.variantKey).toBe("holofoil");
+    expect(board.faces[0]?.headline?.amountAud).toBe(toAud(12, 1.4339));
+    expect(board.faces[0]?.secondary ? secondaryLabel("holofoil", board.faces[0].secondary) : "matched").toBeNull();
+  });
+
+  it("warns when a vintage holo has no edition split", () => {
+    const quotes = quotesForCard(
+      card({
+        tcgplayer: { updatedAt: "2026/10/13", prices: { holofoil: { market: 2 } } },
+        cardmarket: { updatedAt: "2026/06/30", prices: { averageSellPrice: 1.5 } },
+      }),
+      rates,
+    );
+    const vintage = priceBoard(quotes, "1999-01-09");
+    expect(vintage.askEdition).toBe(false);
+    expect(vintage.defaultKey).toBe("holofoil");
+    expect(vintage.editionNote).toBe("Edition not checked. 1st Edition cards can be worth much more.");
+    expect(vintage.faces[0]?.headline?.source).toBe("TCGplayer");
+    expect(vintage.faces[0]?.secondary?.source).toBe("Cardmarket");
+
+    const modern = priceBoard(quotes, "2023-09-22");
+    expect(modern.editionNote).toBeNull();
+    expect(modern.defaultKey).toBe("holofoil");
   });
 });

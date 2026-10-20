@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import { SearchFromParams } from "@/components/search-from-params";
-import { SearchScreen } from "@/components/search-screen";
+import { redirect } from "next/navigation";
 
 export const instant = false;
 
@@ -9,10 +7,8 @@ export const metadata: Metadata = {
   title: "Search",
 };
 
-export default function Page() {
-  return (
-    <Suspense fallback={<SearchScreen initialQuery="" />}>
-      <SearchFromParams />
-    </Suspense>
-  );
+export default async function Page(props: PageProps<"/search">) {
+  const params = await props.searchParams;
+  const query = typeof params.q === "string" ? params.q : "";
+  redirect(query ? `/?q=${encodeURIComponent(query)}` : "/");
 }

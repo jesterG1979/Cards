@@ -1,0 +1,5 @@
+body{margin:0;font-family:Nunito,system-ui,sans-serif;background:#f7f3e6;color:#1f2937;width:390px}
+.top{display:flex;gap:12px;padding:16px;border-bottom:1px solid #ddd6c0;font-weight:800}.top a{color:#0b5aa6}
+.b{display:block;text-align:center;border-radius:999px;padding:16px;font-weight:800;font-size:18px;margin:10px 20px}
+.y{background:#ffd500}.g{background:#efe9d9}.m{color:#6b7280;font-size:13px}
+.note{position:absolute;right:8px;background:#e11d48;color:#fff;font:700 11px system-ui;padding:3px 7px;border-radius:6px}

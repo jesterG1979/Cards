@@ -39,3 +39,8 @@ export function formatOriginal(amount: number, currency: "USD" | "EUR"): string 
 export function collectorLabel(number: string, printedTotal: number | null): string {
   return printedTotal ? `${number}/${printedTotal}` : number;
 }
+
+export function displayNumber(number: string, printedTotal?: number | null): string {
+  if (number.includes("/")) return number;
+  return collectorLabel(number, printedTotal ?? null);
+}
