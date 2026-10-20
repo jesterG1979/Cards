@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyFreshPrices, totalValue, unpricedMessage, upsertItem } from "@/lib/collection";
+import { applyFreshPrices, collectionToCsv, removeItem, totalValue, unpricedMessage, upsertItem } from "@/lib/collection";
+import { displayNumber } from "@/lib/format";
 import type { CollectionItem, PricedCard } from "@/lib/types";
 
 function item(overrides: Partial<CollectionItem> = {}): CollectionItem {
@@ -72,5 +73,48 @@ describe("collection", () => {
     const refreshed = applyFreshPrices(saved, [card]);
     expect(refreshed[0]?.amountAud).toBeNull();
     expect(refreshed[0]?.priceSource).toBeNull();
+    expect(refreshed[0]?.number).toBe("25");
+    expect(refreshed[0]?.printedTotal).toBe(165);
+    expect(displayNumber(refreshed[0]?.number ?? "", refreshed[0]?.printedTotal)).toBe("25/165");
+  });
+
+  it("keeps a saved picture when the refresh has none", () => {
+    const card: PricedCard = {
+      id: "sv3pt5-25",
+      name: "Pikachu",
+      number: "25",
+      rarity: "Common",
+      supertype: "Pokémon",
+      subtypes: [],
+      setId: "sv3pt5",
+      setName: "151",
+      printedTotal: 165,
+      total: 207,
+      releaseDate: null,
+      imageSmall: null,
+      imageLarge: null,
+      quotes: [],
+    };
+    const refreshed = applyFreshPrices([item({ image: "https://example.test/old.png" })], [card]);
+    expect(refreshed[0]?.image).toBe("https://example.test/old.png");
+  });
+
+  it("returns the removed row so it can be put back", () => {
+    const saved = [item({ quantity: 1 })];
+    const { items, removed } = removeItem(saved, "sv3pt5-25", "normal");
+    expect(items).toEqual([]);
+    expect(removed).toMatchObject({ name: "Pikachu", quantity: 1, number: "25/165" });
+    expect(upsertItem(items, removed!)).toEqual(saved);
+  });
+
+  it("exports one CSV row per printing", () => {
+    const csv = collectionToCsv([
+      item({ name: 'Pika, "151"', quantity: 2, amountAud: 0.39 }),
+    ]);
+    const expected = [
+      "name,set,number,variant,quantity,price_aud,source,price_date,saved_at",
+      `"Pika, ""151""",151,25/165,Normal,2,0.39,TCGplayer,2026/10/13,2026-10-13T00:00:00.000Z`,
+    ].join("\n");
+    expect(csv).toBe(expected);
   });
 });

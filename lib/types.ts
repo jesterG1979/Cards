@@ -115,6 +115,7 @@ export type CollectionItem = {
   name: string;
   setName: string;
   number: string;
+  printedTotal?: number | null;
   rarity: string;
   image: string | null;
   variantKey: string;

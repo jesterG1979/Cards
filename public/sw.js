@@ -1,5 +1,5 @@
-const CACHE = "card-price-shell-v2";
-const SHELL = ["/", "/scan", "/search", "/collection", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const CACHE = "card-price-shell-v3";
+const SHELL = ["/", "/scan", "/search", "/collection", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/card-back.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
