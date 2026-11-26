@@ -80,16 +80,19 @@ picture, then check that the top match is that card and that the prices
 are in AUD with a source and a date. That test needs the network and
 Tesseract.
 
-## Deploy
+## Deploy on AWS
 
-The scanner shells out to Tesseract, so the app needs a normal Node.js
-server, not a short serverless function.
+The scanner shells out to Tesseract, so AWS must run the root Docker image
+as a long-running service. The image includes Tesseract and listens on port
+38471. This repository does not provision AWS hosting.
 
 ```bash
 docker build -t card-price .
-docker run --rm -p 38471:38471 -e POKEMONTCG_API_KEY=your-key card-price
+docker run --rm -p 127.0.0.1:38471:38471 -e POKEMONTCG_API_KEY=your-key card-price
 ```
 
-Put the container behind HTTPS. iPhone Safari will not open the camera on
-a plain `http://` site. Prices are loaded when someone scans or opens My
-cards. They are not baked in at build time.
+Run the container behind the approved AWS ingress. Keep port 38471 private
+and use HTTPS and authentication at the ingress; the app itself does not
+provide sign-in. iPhone Safari will not open the camera on a plain `http://`
+site. Configure the optional API key at runtime, not in the image. Prices
+are loaded when someone scans or opens My cards, not at build time.
